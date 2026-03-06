@@ -85,8 +85,8 @@ public class FileManager
         {
             ".md" => useEmoji ? "📝" : "M",
             ".txt" => useEmoji ? "📄" : "T",
-            ".cs" or ".js" or ".ts" or ".cpp" or ".c" or ".h" or ".java" or ".py" => useEmoji ? "💻" : "C",
-            ".json" or ".xml" or ".yaml" or ".yml" => useEmoji ? "🧾" : "J",
+            ".cs" or ".js" or ".ts" or ".cpp" or ".c" or ".h" or ".java" or ".py" => useEmoji ? "🛠️" : "C",
+            ".json" or ".xml" or ".yaml" or ".yml" => useEmoji ? "🔩" : "J",
             ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".svg" => useEmoji ? "🖼️" : "I",
             ".zip" or ".tar" or ".gz" or ".rar" or ".7z" => useEmoji ? "📦" : "Z",
             ".exe" or ".dll" or ".so" => useEmoji ? "⚙️" : "X",
