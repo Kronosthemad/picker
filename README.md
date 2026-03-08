@@ -25,7 +25,6 @@
 		If you want to contribute or have any suggestions, feel free to open an issue or submit a pull request.
 	</p>
 
-<img src="https://github.com/Kronosthemad/picker/screenshot/Screenshot 2026-03-07 203203.png" alt="screenshot" width="600"/>
 
 <h2> Installation </h2>
 	<p>
