@@ -261,6 +261,21 @@ public class FileManager
                 }
                 return true;
 
+            case ConsoleKey.Delete:
+            case ConsoleKey.D:
+                if (files.Count > 0)
+                {
+                    var toDelete = files[selectedIndex];
+                    Console.Clear();
+                    Console.WriteLine($"Delete '{toDelete.Name}'? (y/n)");
+                    var confirm = Console.ReadKey(true);
+                    if (confirm.Key == ConsoleKey.Y)
+                    {
+                        DeleteFile(toDelete);
+                    }
+                }
+                return true;
+
             default:
                 expectSecondG = false;
                 return true;
