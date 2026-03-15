@@ -144,6 +144,84 @@ public class FileManager
         selectedIndex = 0;
     }
 
+    private void MoveIn()
+    {
+        if (files.Count > 0)
+        {
+            var selected = files[selectedIndex];
+            if (selected.IsDirectory)
+            {
+                LoadDirectory(selected.FullPath);
+            }
+            else
+            {
+                OpenFile(selected.FullPath);
+            }
+        }
+    }
+
+    private void MoveOut()
+    {
+        var parent = Directory.GetParent(currentPath);
+        if (parent != null)
+        {
+            LoadDirectory(parent.FullName);
+        }
+    }
+
+    private void NewPrompt()
+    {
+        Console.Clear();
+        Console.WriteLine("Enter name for new file (Esc to cancel):");
+        var name = "";
+        while (true)
+        {
+            var inputKey = Console.ReadKey(true);
+            if (inputKey.Key == ConsoleKey.Enter)
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    NewFile(name);
+                }
+                break;
+            }
+            else if (inputKey.Key == ConsoleKey.Backspace)
+            {
+                if (name.Length > 0)
+                {
+                    name = name.Substring(0, name.Length - 1);
+                    Console.Write("\b \b");
+                }
+            }
+            else if (inputKey.Key == ConsoleKey.Escape)
+            {
+                break;
+            }
+            else
+            {
+                if (!char.IsControl(inputKey.KeyChar))
+                {
+                    name += inputKey.KeyChar;
+                    Console.Write(inputKey.KeyChar);
+                }
+            }
+        }
+    }
+
+    private void DeletePrompt()
+    {
+        if (files.Count > 0)
+        {
+            var toDelete = files[selectedIndex];
+            Console.Clear();
+            Console.WriteLine($"Delete '{toDelete.Name}'? (y/n)");
+            var confirm = Console.ReadKey(true);
+            if (confirm.Key == ConsoleKey.Y)
+            {
+                DeleteFile(toDelete);
+            }
+        }
+    }
     private bool HandleInput(ConsoleKeyInfo key)
     {
         switch (key.Key)
@@ -160,27 +238,12 @@ public class FileManager
                 
             case ConsoleKey.Enter:
             case ConsoleKey.L:
-                if (files.Count > 0)
-                {
-                    var selected = files[selectedIndex];
-                    if (selected.IsDirectory)
-                    {
-                        LoadDirectory(selected.FullPath);
-                    }
-                    else
-                    {
-                        OpenFile(selected.FullPath);
-                    }
-                }
+                MoveIn();
                 return true;
                 
             case ConsoleKey.Backspace:
             case ConsoleKey.H:
-                var parent = Directory.GetParent(currentPath);
-                if (parent != null)
-                {
-                    LoadDirectory(parent.FullName);
-                }
+                MoveOut();
                 return true;
                 
             case ConsoleKey.Q:
@@ -224,56 +287,12 @@ public class FileManager
 
             case ConsoleKey.N:
                 // Prompt for new file name (Esc cancels)
-                Console.Clear();
-                Console.WriteLine("Enter name for new file (Esc to cancel):");
-                var name = "";
-                while (true)
-                {
-                    var inputKey = Console.ReadKey(true);
-                    if (inputKey.Key == ConsoleKey.Enter)
-                    {
-                        if (!string.IsNullOrWhiteSpace(name))
-                        {
-                            NewFile(name);
-                        }
-                        break;
-                    }
-                    else if (inputKey.Key == ConsoleKey.Backspace)
-                    {
-                        if (name.Length > 0)
-                        {
-                            name = name.Substring(0, name.Length - 1);
-                            Console.Write("\b \b");
-                        }
-                    }
-                    else if (inputKey.Key == ConsoleKey.Escape)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        if (!char.IsControl(inputKey.KeyChar))
-                        {
-                            name += inputKey.KeyChar;
-                            Console.Write(inputKey.KeyChar);
-                        }
-                    }
-                }
+                NewPrompt();
                 return true;
 
             case ConsoleKey.Delete:
             case ConsoleKey.D:
-                if (files.Count > 0)
-                {
-                    var toDelete = files[selectedIndex];
-                    Console.Clear();
-                    Console.WriteLine($"Delete '{toDelete.Name}'? (y/n)");
-                    var confirm = Console.ReadKey(true);
-                    if (confirm.Key == ConsoleKey.Y)
-                    {
-                        DeleteFile(toDelete);
-                    }
-                }
+                DeletePrompt();
                 return true;
 
             default:
@@ -359,7 +378,7 @@ public class FileManager
 
         bookmarkService.Add(dirName, currentPath, type);
     }
-
+ 
 private bool SelectBookmark()
     {
         if (bookmarks.Count == 0)
@@ -399,11 +418,11 @@ private bool SelectBookmark()
                 var name = allBookmarks[i].Name;
                 if (allBookmarks[i].Type == BookmarkType.Project)
                 {
-                    name = $"[P] {name}";
+                    name = $"[⚙️] {name}";
                 }
                 else
                 {
-                    name = $"[R] {name}";
+                    name = $"[📖] {name}";
                 }
                 Console.WriteLine(prefix + name);
             }
