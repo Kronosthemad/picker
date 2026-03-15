@@ -4,97 +4,32 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
 using Picker.Models;
 
 namespace Picker;
 
 public class FileManager
 {
-    private string currentPath;
+    private readonly FileIconProvider iconProvider;
+    private readonly MotionService motion;
+    private readonly FileOperations fileOps;
     private List<FileEntry> files = new();
-    private BookmarkService bookmarkService;
-    private List<BookmarkEntry> bookmarks => bookmarkService.Bookmarks;
-    private int selectedIndex = 0;
-    private readonly int maxVisibleItems;
-    private bool expectSecondG = false;
-    private readonly bool useEmoji;
-    private readonly string bookmarksFile;
+
+    public string CurrentPath => motion.CurrentPath;
 
     public FileManager()
     {
-        currentPath = Environment.CurrentDirectory;
-        int windowHeight;
-        try { windowHeight = Console.WindowHeight; }
-        catch { windowHeight = 24; }
-        maxVisibleItems = Math.Max(10, windowHeight - 4);
-        
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var pickerDir = Path.Combine(appData, "picker");
-        Directory.CreateDirectory(pickerDir);
-        bookmarksFile = Path.Combine(pickerDir, "bookmarks.json");
-        bookmarkService = new BookmarkService(bookmarksFile);
-        useEmoji = CheckEmojiSupported();
+        iconProvider = new FileIconProvider();
+        motion = new MotionService(LoadDirectory, fileOps_OpenFile);
+        fileOps = new FileOperations(Environment.CurrentDirectory, LoadDirectory);
     }
 
-    private bool CheckEmojiSupported()
+    private void fileOps_OpenFile(string path)
     {
-        try
-        {
-            var enc = Console.OutputEncoding ?? Encoding.UTF8;
-            var sample = "📁";
-            var bytes = enc.GetBytes(sample);
-            var round = enc.GetString(bytes);
-            return round == sample;
-        }
-        catch
-        {
-            return false;
-        }
+        fileOps.OpenFile(path);
     }
 
-    private string GetFileIcon(string name, bool isDirectory)
-    {
-        if (isDirectory) return useEmoji ? "📁" : "▸";
-
-        var ext = Path.GetExtension(name).ToLowerInvariant();
-
-        if (string.IsNullOrEmpty(ext))
-            return useEmoji ? "📄" : "•";
-
-        return ext switch
-        {
-            ".md" => useEmoji ? "📝" : "M",
-            ".txt" => useEmoji ? "📄" : "T",
-            ".cs" or ".js" or ".ts" or ".cpp" or ".c" or ".h" or ".java" or ".py" => useEmoji ? "🛠️" : "C",
-            ".json" or ".xml" or ".yaml" or ".yml" => useEmoji ? "🔩" : "J",
-            ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".svg" => useEmoji ? "🖼️" : "I",
-            ".zip" or ".tar" or ".gz" or ".rar" or ".7z" => useEmoji ? "📦" : "Z",
-            ".exe" or ".dll" or ".so" => useEmoji ? "⚙️" : "X",
-            ".mp3" or ".wav" or ".flac" => useEmoji ? "🎵" : "A",
-            ".mp4" or ".mkv" or ".avi" or ".mov" => useEmoji ? "🎬" : "V",
-            ".pdf" => useEmoji ? "📕" : "P",
-            _ => useEmoji ? "📄" : "•",
-        };
-    }
-
-    public void Run()
-    {
-        LoadDirectory(currentPath);
-
-        while (true)
-        {
-            AnsiConsole.Clear();
-            Render();
-            
-            var key = Console.ReadKey(true);
-            if (!HandleInput(key)) break;
-        }
-    }
-
-    private void LoadDirectory(string path)
+    public void LoadDirectory(string path)
     {
         files.Clear();
         
@@ -140,393 +75,28 @@ public class FileManager
             AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
         }
 
-        currentPath = path;
-        selectedIndex = 0;
+        motion.SetPath(path);
+        fileOps.SetPath(path);
+        motion.UpdateFiles(files);
     }
 
-    private void MoveIn()
-    {
-        if (files.Count > 0)
-        {
-            var selected = files[selectedIndex];
-            if (selected.IsDirectory)
-            {
-                LoadDirectory(selected.FullPath);
-            }
-            else
-            {
-                OpenFile(selected.FullPath);
-            }
-        }
-    }
+    public void MoveUp() => motion.MoveUp();
+    public void MoveDown() => motion.MoveDown();
+    public void MoveIn() => motion.MoveIn();
+    public void MoveOut() => motion.MoveOut();
+    public void MoveToStart() => motion.MoveToStart();
+    public void MoveToEnd() => motion.MoveToEnd();
+    public void MovePageUp() => motion.MovePageUp();
+    public void MovePageDown() => motion.MovePageDown();
+    public bool HandleDoubleG() => motion.HandleDoubleG();
+    public void ResetDoubleG() => motion.ResetDoubleG();
+    public void NewPrompt() => fileOps.NewPrompt();
+    public void DeletePrompt() => fileOps.DeletePrompt(files, motion.SelectedIndex);
 
-    private void MoveOut()
-    {
-        var parent = Directory.GetParent(currentPath);
-        if (parent != null)
-        {
-            LoadDirectory(parent.FullName);
-        }
-    }
+    public string GetFileIcon(string name, bool isDirectory) => iconProvider.GetFileIcon(name, isDirectory);
+    public string GetFolderIcon() => iconProvider.GetFolderIcon();
 
-    private void NewPrompt()
-    {
-        Console.Clear();
-        Console.WriteLine("Enter name for new file (Esc to cancel):");
-        var name = "";
-        while (true)
-        {
-            var inputKey = Console.ReadKey(true);
-            if (inputKey.Key == ConsoleKey.Enter)
-            {
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    NewFile(name);
-                }
-                break;
-            }
-            else if (inputKey.Key == ConsoleKey.Backspace)
-            {
-                if (name.Length > 0)
-                {
-                    name = name.Substring(0, name.Length - 1);
-                    Console.Write("\b \b");
-                }
-            }
-            else if (inputKey.Key == ConsoleKey.Escape)
-            {
-                break;
-            }
-            else
-            {
-                if (!char.IsControl(inputKey.KeyChar))
-                {
-                    name += inputKey.KeyChar;
-                    Console.Write(inputKey.KeyChar);
-                }
-            }
-        }
-    }
-
-    private void DeletePrompt()
-    {
-        if (files.Count > 0)
-        {
-            var toDelete = files[selectedIndex];
-            Console.Clear();
-            Console.WriteLine($"Delete '{toDelete.Name}'? (y/n)");
-            var confirm = Console.ReadKey(true);
-            if (confirm.Key == ConsoleKey.Y)
-            {
-                DeleteFile(toDelete);
-            }
-        }
-    }
-    private bool HandleInput(ConsoleKeyInfo key)
-    {
-        switch (key.Key)
-        {
-            case ConsoleKey.UpArrow:
-            case ConsoleKey.K:
-                if (selectedIndex > 0) selectedIndex--;
-                return true;
-                
-            case ConsoleKey.DownArrow:
-            case ConsoleKey.J:
-                if (selectedIndex < files.Count - 1) selectedIndex++;
-                return true;
-                
-            case ConsoleKey.Enter:
-            case ConsoleKey.L:
-                MoveIn();
-                return true;
-                
-            case ConsoleKey.Backspace:
-            case ConsoleKey.H:
-                MoveOut();
-                return true;
-                
-            case ConsoleKey.Q:
-                return false;
-                
-            case ConsoleKey.Home:
-                selectedIndex = 0;
-                return true;
-                
-            case ConsoleKey.End:
-                selectedIndex = Math.Max(0, files.Count - 1);
-                return true;
-                
-            case ConsoleKey.PageUp:
-                selectedIndex = Math.Max(0, selectedIndex - maxVisibleItems);
-                return true;
-                
-            case ConsoleKey.PageDown:
-                selectedIndex = Math.Min(files.Count - 1, selectedIndex + maxVisibleItems);
-                return true;
-                
-            case ConsoleKey.G:
-                if (expectSecondG)
-                {
-                    selectedIndex = Math.Max(0, files.Count - 1);
-                    expectSecondG = false;
-                }
-                else
-                {
-                    expectSecondG = true;
-                }
-                return true;
-                
-            case ConsoleKey.M:
-                AddBookmark();
-                return true;
-                
-            case ConsoleKey.B:
-                SelectBookmark();
-                return true;
-
-            case ConsoleKey.N:
-                // Prompt for new file name (Esc cancels)
-                NewPrompt();
-                return true;
-
-            case ConsoleKey.Delete:
-            case ConsoleKey.D:
-                DeletePrompt();
-                return true;
-
-            default:
-                expectSecondG = false;
-                return true;
-        }
-    }
-
-    private void OpenFile(string path)
-    {
-        try
-        {
-            var startInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = path,
-                UseShellExecute = true
-            };
-            System.Diagnostics.Process.Start(startInfo);
-        }
-        catch
-        {
-        }
-    }
-
-    private void  NewFile(string name)
-    {
-        var newPath = Path.Combine(currentPath, name);
-        try
-        {
-            if (!File.Exists(newPath))
-            {
-                File.WriteAllText(newPath, "");
-                LoadDirectory(currentPath);
-                selectedIndex = files.FindIndex(f => f.FullPath == newPath);
-            }
-        }
-        catch
-        {
-            ErrorEventArgs e = new ErrorEventArgs(new Exception("Failed to create file."));
-        }
-    }
-
-    private void DeleteFile(FileEntry file)
-    {
-        try
-        {
-            if (file.IsDirectory)
-            {
-                Directory.Delete(file.FullPath, true);
-            }
-            else
-            {
-                File.Delete(file.FullPath);
-            }
-            LoadDirectory(currentPath);
-        }
-        catch
-        {
-            ErrorEventArgs e = new ErrorEventArgs(new Exception("Failed to delete."));
-        }
-    }
-
-    // Bookmark persistence handled by BookmarkService
-
-    private void AddBookmark()
-    {
-        var dirName = Path.GetFileName(currentPath);
-        if (string.IsNullOrEmpty(dirName)) dirName = currentPath;
-        
-        if (bookmarks.Any(b => b.Path == currentPath)) return;
-
-        Console.WriteLine("Add bookmark?");
-        Console.WriteLine("p: Project | r: Regular | any key: Cancel");
-
-        var key = Console.ReadKey(true);
-        BookmarkType type;
-        switch (key.Key)
-        {
-            case ConsoleKey.P: type = BookmarkType.Project; break;
-            case ConsoleKey.R: type = BookmarkType.Regular; break;
-            default: return;
-        }
-
-        bookmarkService.Add(dirName, currentPath, type);
-    }
- 
-private bool SelectBookmark()
-    {
-        if (bookmarks.Count == 0)
-        {
-            Console.WriteLine("No bookmarks yet. Press 'm' to add one.");
-            Thread.Sleep(1000);
-            return true;
-        }
-
-        var projectBookmarks = bookmarks.Where(b => b.Type == BookmarkType.Project).ToList();
-        var regularBookmarks = bookmarks.Where(b => b.Type == BookmarkType.Regular).ToList();
-
-        var allBookmarks = new List<BookmarkEntry>();
-        
-        if (projectBookmarks.Any())
-        {
-            allBookmarks.AddRange(projectBookmarks);
-        }
-        if (regularBookmarks.Any())
-        {
-            allBookmarks.AddRange(regularBookmarks);
-        }
-
-        int bookmarkIndex = 0;
-        
-        while (true)
-        {
-            Console.Clear();
-
-            Console.WriteLine(" Bookmarks - j/k: navigate | Enter: select | d: delete | Esc: cancel");
-            Console.WriteLine(new string('-', 50));
-            
-            for (int i = 0; i < allBookmarks.Count; i++)
-            {
-                var isSelected = i == bookmarkIndex;
-                var prefix = isSelected ? "> " : "  ";
-                var name = allBookmarks[i].Name;
-                if (allBookmarks[i].Type == BookmarkType.Project)
-                {
-                    name = $"[⚙️] {name}";
-                }
-                else
-                {
-                    name = $"[📖] {name}";
-                }
-                Console.WriteLine(prefix + name);
-            }
-            Console.WriteLine(new string('-', 50));
-
-            var key = Console.ReadKey(true);
-            
-            switch (key.Key)
-            {
-                case ConsoleKey.UpArrow:
-                case ConsoleKey.K:
-                    if (bookmarkIndex > 0) bookmarkIndex--;
-                    else bookmarkIndex = allBookmarks.Count - 1;
-                    break;
-                case ConsoleKey.DownArrow:
-                case ConsoleKey.J:
-                    if (bookmarkIndex < allBookmarks.Count - 1) bookmarkIndex++;
-                    else bookmarkIndex = 0;
-                    break;
-                case ConsoleKey.Enter:
-                    var bookmark = allBookmarks[bookmarkIndex];
-                    if (Directory.Exists(bookmark.Path))
-                    {
-                        LoadDirectory(bookmark.Path);
-                        return true;
-                    }
-                    break;
-                case ConsoleKey.D:
-                case ConsoleKey.Delete:
-                    // Confirm deletion
-                    var toRemove = allBookmarks[bookmarkIndex];
-                    Console.Clear();
-                    Console.WriteLine($"Delete bookmark '{toRemove.Name}'? (y/n)");
-                    var confirm = Console.ReadKey(true);
-                    if (confirm.Key == ConsoleKey.Y)
-                    {
-                        bookmarkService.RemoveByPath(toRemove.Path);
-
-                        // Rebuild lists
-                        projectBookmarks = bookmarks.Where(b => b.Type == BookmarkType.Project).ToList();
-                        regularBookmarks = bookmarks.Where(b => b.Type == BookmarkType.Regular).ToList();
-                        allBookmarks = new List<BookmarkEntry>();
-                        if (projectBookmarks.Any()) allBookmarks.AddRange(projectBookmarks);
-                        if (regularBookmarks.Any()) allBookmarks.AddRange(regularBookmarks);
-
-                        if (allBookmarks.Count == 0)
-                        {
-                            Console.WriteLine("No bookmarks left. Press any key...");
-                            Console.ReadKey(true);
-                            return true;
-                        }
-
-                        if (bookmarkIndex >= allBookmarks.Count) bookmarkIndex = allBookmarks.Count - 1;
-                    }
-                    break;
-
-                
-
-                case ConsoleKey.E:
-                    if (allBookmarks[bookmarkIndex].Type == BookmarkType.Project)
-                    {
-                        Console.Clear();
-                        Console.WriteLine("Edit bookmark name (Esc to cancel):");
-                        var newName = "";
-                        while (true)
-                        {
-                            var inputKey = Console.ReadKey(true);
-                            if (inputKey.Key == ConsoleKey.Enter)
-                            {
-                                if (!string.IsNullOrWhiteSpace(newName))
-                                {
-                                    var bookmarkToEdit = allBookmarks[bookmarkIndex];
-                                    bookmarkToEdit.Name = newName;
-                                    bookmarkService.Save();
-                                }
-                                break;
-                            }
-                            else if (inputKey.Key == ConsoleKey.Backspace)
-                            {
-                                if (newName.Length > 0)
-                                {
-                                    newName = newName.Substring(0, newName.Length - 1);
-                                    Console.Write("\b \b");
-                                }
-                            }
-                            else if (inputKey.Key == ConsoleKey.Escape)
-                            {
-                                break;
-                            }
-                            else
-                            {
-                                newName += inputKey.KeyChar;
-                                Console.Write(inputKey.KeyChar);
-                            }
-                        }
-                    }
-                    break;
-                case ConsoleKey.Escape:
-                    return true;
-            }
-        }
-    }
-
-    private void Render()
+    public void Render()
     {
         var layout = new Layout("Root")
             .SplitRows(
@@ -534,7 +104,7 @@ private bool SelectBookmark()
                 new Layout("Content"));
 
         layout["Status"].Update(new Panel(
-            Markup.Escape(currentPath))
+            Markup.Escape(motion.CurrentPath))
             .Padding(0, 0, 0, 0)
             .Border(BoxBorder.None));
 
@@ -563,17 +133,15 @@ private bool SelectBookmark()
 
     private IRenderable BuildDirectoryTree()
     {
-        var tree = new Tree(currentPath);
-        var rootDir = new DirectoryInfo(currentPath);
+        var tree = new Tree(motion.CurrentPath);
+        var rootDir = new DirectoryInfo(motion.CurrentPath);
         
         try
         {
-            var subdirs = rootDir.GetDirectories().Take(5).ToList();
+            var subdirs = rootDir.GetDirectories().Take(15).ToList();
             foreach (var dir in subdirs)
             {
-                // prepend folder icon (emoji or ASCII)
-                var folderIcon = useEmoji ? "📁" : "▸";
-                tree.AddNode($"[blue]{folderIcon} {dir.Name}/[/]");
+                tree.AddNode($"[blue]{iconProvider.GetFolderIcon()} {dir.Name}/[/]");
             }
         }
         catch { }
@@ -588,12 +156,12 @@ private bool SelectBookmark()
         
         foreach (var file in files)
         {
-            var isSelected = files.IndexOf(file) == selectedIndex;
+            var isSelected = files.IndexOf(file) == motion.SelectedIndex;
             var style = isSelected ? "[white on blue]" : "";
             var endStyle = isSelected ? "[/]" : "";
             
             string name;
-            var icon = GetFileIcon(file.Name, file.IsDirectory);
+            var icon = iconProvider.GetFileIcon(file.Name, file.IsDirectory);
             if (file.IsDirectory)
             {
                 name = $"{style}[blue]{icon} {file.Name}/[/]{endStyle}";
@@ -611,11 +179,11 @@ private bool SelectBookmark()
 
     private IRenderable BuildPreview()
     {
-        if (files.Count == 0 || selectedIndex >= files.Count)
+        var selected = motion.GetSelectedFile();
+        if (selected == null)
             return new Text("No file selected");
 
-        var selected = files[selectedIndex];
-        var icon = GetFileIcon(selected.Name, selected.IsDirectory);
+        var icon = iconProvider.GetFileIcon(selected.Name, selected.IsDirectory);
 
         if (selected.IsDirectory)
         {
@@ -631,7 +199,6 @@ private bool SelectBookmark()
             {
                 var lines = File.ReadLines(selected.FullPath).Take(50).ToList();
                 var content = string.Join("\n", lines);
-                // show header with icon + filename
                 var header = $"{icon} {selected.Name}\n\n";
                 return new Text(header + content);
             }
